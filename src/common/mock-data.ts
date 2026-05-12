@@ -38,6 +38,13 @@ export const MOCK_META = {
     ],
   },
 
+  // Simulates Meta Cloud API message send response
+  messageSent: {
+    messaging_product: 'whatsapp',
+    contacts: [{ input: '', wa_id: '' }],
+    status: 'SENT',
+  },
+
   // Simulates incoming webhook event (appointment reply)
   incomingWebhookEvent: {
     object: 'whatsapp_business_account',
@@ -71,13 +78,90 @@ export const MOCK_META = {
     ],
   },
 
-  // Simulates Meta Cloud API message send response
-  messageSent: {
-    messaging_product: 'whatsapp',
-    contacts: [{ input: '', wa_id: '' }],
-    status: 'SENT',
+  // ─────────────────────────────────────────────
+  // Template Message Mock Data
+  // Mirrors real Meta Cloud API template responses
+  // ─────────────────────────────────────────────
+
+  // Three appointment templates definitions
+  templates: {
+    appointment_confirmation: {
+      name: 'appointment_confirmation',
+      language: 'en_US',
+      category: 'UTILITY',
+      status: 'APPROVED',
+      components: {
+        body: 'Hello {{patient_name}}! Your appointment with Dr. {{doctor_name}} at {{hospital_name}} is *confirmed* for {{appointment_date}} at {{appointment_time}}. Please reply CONFIRM to confirm or CANCEL to cancel.',
+      },
+    },
+    appointment_reminder: {
+      name: 'appointment_reminder',
+      language: 'en_US',
+      category: 'UTILITY',
+      status: 'APPROVED',
+      components: {
+        body: 'Hello {{patient_name}}! This is a reminder that your appointment with Dr. {{doctor_name}} at {{hospital_name}} is tomorrow — {{appointment_date}} at {{appointment_time}}. Please be on time.',
+      },
+    },
+    appointment_cancellation: {
+      name: 'appointment_cancellation',
+      language: 'en_US',
+      category: 'UTILITY',
+      status: 'APPROVED',
+      components: {
+        body: 'Hello {{patient_name}}, your appointment with Dr. {{doctor_name}} at {{hospital_name}} scheduled for {{appointment_date}} at {{appointment_time}} has been *cancelled*. Please contact us to reschedule.',
+      },
+    },
   },
 
+  // Simulates Meta response after template message is sent
+  templateSendResponse: {
+    messaging_product: 'whatsapp',
+    contacts: [
+      {
+        input: '',
+        wa_id: '',
+      },
+    ],
+    messages: [
+      {
+        id: '',
+        message_status: 'accepted',
+      },
+    ],
+  },
+
+  // Simulates template delivery webhook event from Meta
+  templateDeliveryEvent: {
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: '123456789012345',
+        changes: [
+          {
+            value: {
+              messaging_product: 'whatsapp',
+              metadata: {
+                display_phone_number: '+1 (555) 000-1234',
+                phone_number_id: '987654321098765',
+              },
+              statuses: [
+                {
+                  id: 'wamid.MOCK_TEMPLATE_MSG_001',
+                  status: 'delivered',
+                  timestamp: '1715420400',
+                  recipient_id: '919876543210',
+                },
+              ],
+            },
+            field: 'messages',
+          },
+        ],
+      },
+    ],
+  },
+
+  // Simulates failure scenarios
   errors: {
     userCancelled: {
       error: 'user_cancelled',
@@ -96,8 +180,20 @@ export const MOCK_META = {
     },
     messageSendFailed: {
       error: 'message_send_failed',
-      error_description: 'Failed to send message — invalid token or unregistered number',
+      error_description:
+        'Failed to send message — invalid token or unregistered number',
       error_code: 4007,
+    },
+    templateSendFailed: {
+      error: 'template_send_failed',
+      error_description:
+        'Failed to send template message — invalid template or token',
+      error_code: 4008,
+    },
+    templateNotFound: {
+      error: 'template_not_found',
+      error_description: 'The requested template name does not exist',
+      error_code: 4009,
     },
   },
 };
@@ -121,12 +217,26 @@ export const MOCK_MESSAGEBIRD = {
     created_at: new Date().toISOString(),
   },
 
+  // Simulates MessageBird template send response
+  templateSent: {
+    message_id: '',
+    template_name: '',
+    status: 'ACCEPTED',
+    to: '',
+    created_at: new Date().toISOString(),
+  },
+
   // Simulates MessageBird failure
   errors: {
     invalidAccessKey: {
       error: 'invalid_access_key',
       error_description: 'The provided access key is not valid',
       error_code: 5001,
+    },
+    templateSendFailed: {
+      error: 'template_send_failed',
+      error_description: 'Failed to send template via MessageBird',
+      error_code: 5003,
     },
   },
 };

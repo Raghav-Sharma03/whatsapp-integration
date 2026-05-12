@@ -98,6 +98,90 @@ Restart the server after changing the value. No code changes needed.
 | GET | `/whatsapp/provider` | Check which provider is currently active |
 | POST | `/whatsapp/send-appointment` | Send appointment message via active provider |
 
+
+---
+
+##  Template Message API
+
+### What are Template Messages?
+Template messages are pre-approved message formats used to send appointment notifications outside the 24-hour customer service window. Each template has dynamic placeholders that get replaced with real values at send time.
+
+### Available Templates
+
+| Template Name | When to Use |
+|---|---|
+| `appointment_confirmation` | Right after booking |
+| `appointment_reminder` | 24 hours before appointment |
+| `appointment_cancellation` | When appointment is cancelled |
+
+###  Template Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/template/send` | Send any template by name |
+| POST | `/template/appointment/confirmation` | Send confirmation template |
+| POST | `/template/appointment/reminder` | Send reminder template |
+| POST | `/template/appointment/cancellation` | Send cancellation template |
+| GET | `/template/status/:messageId` | Get delivery status |
+| POST | `/webhook/meta/template-status/:messageId` | Simulate delivery event |
+
+###  Sample Request Bodies
+
+#### POST `/template/appointment/confirmation`
+```json
+{
+  "to": "919876543210",
+  "params": {
+    "patient_name": "Raghav Sharma",
+    "doctor_name": "Mehta",
+    "appointment_date": "12th May 2026",
+    "appointment_time": "10:30 AM",
+    "hospital_name": "PearlThoughts Hospital"
+  }
+}
+```
+
+#### POST `/template/send` (generic)
+```json
+{
+  "to": "919876543210",
+  "template_name": "appointment_confirmation",
+  "params": {
+    "patient_name": "Raghav Sharma",
+    "doctor_name": "Mehta",
+    "appointment_date": "12th May 2026",
+    "appointment_time": "10:30 AM",
+    "hospital_name": "PearlThoughts Hospital"
+  }
+}
+
+#### GET `/template/status/:messageId`
+
+GET /template/status/wamid.MOCK_VMUY1AWBF
+
+#### POST `/webhook/meta/template-status/:messageId`
+
+###  Template Status Lifecycle
+
+SENT → DELIVERED → (READ)
+↓
+FAILED → RETRY (max 3) → SENT or FALLBACK
+
+###  Retry + Fallback Behaviour
+- On failure: retries up to **3 times** automatically
+- After 3 retries: **falls back** to the other provider
+- Example: META_WHATSAPP fails → automatically switches to MESSAGE_BIRD
+
+###  Simulate Scenarios
+
+| Scenario | How |
+|---|---|
+| Normal send | `POST /template/appointment/confirmation` |
+| Retry (fails 2x then succeeds) | Add `?simulate=retry` |
+| Full failure + fallback | Add `?simulate=failure` |
+| Delivery webhook | `POST /webhook/meta/template-status/:id?status=delivered` |
+| Failed webhook | `POST /webhook/meta/template-status/:id?status=failed` |
+
 ---
 
 ##  Simulate Failure Scenarios
