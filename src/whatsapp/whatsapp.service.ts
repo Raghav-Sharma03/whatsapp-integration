@@ -14,8 +14,11 @@ export class WhatsAppService {
 
   // ─────────────────────────────────────────────
   // Send Appointment Message
-  // Reads WHATSAPP_PROVIDER from .env and routes
-  // to the correct provider automatically
+  // This is the MESSAGING flow — completely
+  // separate from the ONBOARDING flow.
+  //
+  // Onboarding = registering your business ONCE
+  // Messaging  = sending a message EVERY TIME
   // ─────────────────────────────────────────────
   sendAppointmentMessage(
     to: string,
@@ -23,49 +26,46 @@ export class WhatsAppService {
     doctorName: string,
     appointmentDate: string,
     appointmentTime: string,
+    hospitalName: string,
     simulate?: string,
   ) {
     const provider = getProvider();
 
     const messageBody =
       `Hello ${patientName}! Your appointment with Dr. ${doctorName} ` +
-      `is confirmed for ${appointmentDate} at ${appointmentTime}. ` +
+      `at ${hospitalName} is confirmed for ${appointmentDate} at ${appointmentTime}. ` +
       `Please reply CONFIRM to confirm or CANCEL to cancel.`;
 
     this.logger.log(`[WhatsApp Router] Active provider: ${provider}`);
     this.logger.log(`[WhatsApp Router] Sending appointment message to: ${to}`);
     this.logger.log(`[WhatsApp Router] Message: ${messageBody}`);
 
+    // ─────────────────────────────────────────
+    // META WHATSAPP — uses Cloud API sendMessage
+    // NOT onboarding/registration logic
+    // ─────────────────────────────────────────
     if (provider === WhatsAppProvider.META_WHATSAPP) {
-      this.logger.log('[WhatsApp Router] Routing to → Meta WhatsApp');
+      this.logger.log('[WhatsApp Router] Routing to → Meta Cloud API sendMessage');
+      const result = this.metaService.sendMessage(to, messageBody, simulate);
       return {
         provider: 'META_WHATSAPP',
-        ...this.metaService.registerPhoneNumber(
-          'MOCK_PHONE_NUMBER_ID',
-          'MOCK_ACCESS_TOKEN',
-          simulate,
-        ),
-        appointment_message: {
-          to,
-          body: messageBody,
-          status: simulate === 'failure' ? 'FAILED' : 'SENT',
-          message_id:
-            'META_MSG_MOCK_' +
-            Math.random().toString(36).substr(2, 9).toUpperCase(),
-          sent_at: new Date().toISOString(),
-        },
+        ...result,
       };
     }
 
+    // ─────────────────────────────────────────
+    // MESSAGE BIRD — uses Bird API sendMessage
+    // ─────────────────────────────────────────
     if (provider === WhatsAppProvider.MESSAGE_BIRD) {
-      this.logger.log('[WhatsApp Router] Routing to → MessageBird');
+      this.logger.log('[WhatsApp Router] Routing to → MessageBird sendMessage');
+      const result = this.messageBirdService.sendMessage(to, messageBody, simulate);
       return {
         provider: 'MESSAGE_BIRD',
-        ...this.messageBirdService.sendMessage(to, messageBody, simulate),
+        ...result,
       };
     }
 
-    // Fallback — should never reach here due to getProvider() default
+    // Fallback — should never reach here
     this.logger.error('[WhatsApp Router] Unknown provider — cannot send message');
     return {
       success: false,

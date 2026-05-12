@@ -71,7 +71,13 @@ export const MOCK_META = {
     ],
   },
 
-  // Simulates failure scenarios
+  // Simulates Meta Cloud API message send response
+  messageSent: {
+    messaging_product: 'whatsapp',
+    contacts: [{ input: '', wa_id: '' }],
+    status: 'SENT',
+  },
+
   errors: {
     userCancelled: {
       error: 'user_cancelled',
@@ -87,6 +93,11 @@ export const MOCK_META = {
       error: 'phone_already_registered',
       error_description: 'This phone number is already registered on Cloud API',
       error_code: 4003,
+    },
+    messageSendFailed: {
+      error: 'message_send_failed',
+      error_description: 'Failed to send message — invalid token or unregistered number',
+      error_code: 4007,
     },
   },
 };

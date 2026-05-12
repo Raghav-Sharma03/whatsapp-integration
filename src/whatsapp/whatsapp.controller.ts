@@ -7,20 +7,14 @@ export class WhatsAppController {
 
   constructor(private readonly whatsAppService: WhatsAppService) {}
 
-  // ─────────────────────────────────────────────
   // GET /whatsapp/provider
-  // Returns which provider is currently active
-  // ─────────────────────────────────────────────
   @Get('provider')
   getActiveProvider() {
     this.logger.log('[WhatsApp Controller] GET /whatsapp/provider called');
     return this.whatsAppService.getActiveProvider();
   }
 
-  // ─────────────────────────────────────────────
   // POST /whatsapp/send-appointment
-  // Sends appointment message via active provider
-  // ─────────────────────────────────────────────
   @Post('send-appointment')
   sendAppointment(
     @Body()
@@ -30,6 +24,7 @@ export class WhatsAppController {
       doctor_name: string;
       appointment_date: string;
       appointment_time: string;
+      hospital_name: string;
     },
     @Query('simulate') simulate?: string,
   ) {
@@ -42,6 +37,7 @@ export class WhatsAppController {
       body.doctor_name,
       body.appointment_date,
       body.appointment_time,
+      body.hospital_name,
       simulate,
     );
   }
