@@ -1,8 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MessageBirdService } from '../messagebird/messagebird.service';
-import { getProvider, WhatsAppProvider } from '../config/provider.config';
+import { getProvider } from '../config/provider.config';
 import { TemplateService } from '../template/template.service';
-import { AppointmentTemplateType } from '../template/template.types';
+import {
+  AppointmentTemplateType,
+  AppointmentType,
+} from '../template/template.types';
 
 @Injectable()
 export class WhatsAppService {
@@ -15,10 +18,11 @@ export class WhatsAppService {
 
   // ─────────────────────────────────────────────
   // Send Appointment Message
-  // Now uses TemplateService for structured
-  // template messages — NOT plain text
-  // This is the proper integration into the
-  // existing appointment notification service
+  // Accepts appointment_type to determine which
+  // template to send:
+  // confirmation → appointment_confirmation
+  // reminder     → appointment_reminder
+  // cancellation → appointment_cancellation
   // ─────────────────────────────────────────────
   async sendAppointmentMessage(
     to: string,
@@ -27,6 +31,7 @@ export class WhatsAppService {
     appointmentDate: string,
     appointmentTime: string,
     hospitalName: string,
+    appointmentType: AppointmentType = AppointmentType.CONFIRMATION,
     simulate?: string,
   ) {
     const provider = getProvider();
@@ -39,25 +44,26 @@ export class WhatsAppService {
       hospital_name: hospitalName,
     };
 
+    // Map appointment type to template name
+    const templateMap: Record<AppointmentType, AppointmentTemplateType> = {
+      [AppointmentType.CONFIRMATION]:
+        AppointmentTemplateType.CONFIRMATION,
+      [AppointmentType.REMINDER]:
+        AppointmentTemplateType.REMINDER,
+      [AppointmentType.CANCELLATION]:
+        AppointmentTemplateType.CANCELLATION,
+    };
+
+    const templateName = templateMap[appointmentType];
+
     this.logger.log(`[WhatsApp Router] Active provider: ${provider}`);
-    this.logger.log(`[WhatsApp Router] Sending appointment template to: ${to}`);
-    this.logger.log(
-      `[WhatsApp Router] Using template: ${AppointmentTemplateType.CONFIRMATION}`,
-    );
+    this.logger.log(`[WhatsApp Router] Appointment type: ${appointmentType}`);
+    this.logger.log(`[WhatsApp Router] Template: ${templateName}`);
+    this.logger.log(`[WhatsApp Router] Sending to: ${to}`);
 
-    // ─────────────────────────────────────────
-    // Routes to TemplateService which handles:
-    // - Correct provider payload format
-    // - Status tracking
-    // - Retry logic
-    // - Fallback handling
-    // ─────────────────────────────────────────
-    this.logger.log(
-      `[WhatsApp Router] Routing to TemplateService → sendConfirmation()`,
-    );
-
-    const result = await this.templateService.sendConfirmation(
+    const result = await this.templateService.sendTemplate(
       to,
+      templateName,
       templateParams,
       simulate,
     );
@@ -75,7 +81,7 @@ export class WhatsAppService {
       active_provider: provider,
       message: `All WhatsApp messages are currently being sent via ${provider}`,
       switch_instructions:
-        'To switch providers, change WHATSAPP_PROVIDER in your .env file to either MESSAGE_BIRD or META_WHATSAPP and restart the server.',
+        'To switch providers, change WHATSAPP_PROVIDER in your .env to either MESSAGE_BIRD or META_WHATSAPP and restart the server.',
     };
   }
 }

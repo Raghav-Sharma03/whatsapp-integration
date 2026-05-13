@@ -10,12 +10,21 @@ export enum AppointmentTemplateType {
   CANCELLATION = 'appointment_cancellation',
 }
 
+// Appointment action type — determines which
+// template gets sent from the appointment flow
+export enum AppointmentType {
+  CONFIRMATION = 'confirmation',
+  REMINDER = 'reminder',
+  CANCELLATION = 'cancellation',
+}
+
 // Template message status lifecycle
 export enum TemplateMessageStatus {
   SENT = 'SENT',
   DELIVERED = 'DELIVERED',
   FAILED = 'FAILED',
   RETRYING = 'RETRYING',
+  FALLBACK_SENT = 'FALLBACK_SENT',
 }
 
 // WhatsApp provider
@@ -85,6 +94,8 @@ export interface TemplateStatusRecord {
   provider: TemplateProvider;
   status: TemplateMessageStatus;
   retry_count: number;
+  fallback_used: boolean;
+  fallback_provider?: TemplateProvider;
   created_at: string;
   updated_at: string;
 }

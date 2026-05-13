@@ -4,26 +4,26 @@ A NestJS + TypeScript mock implementation of Meta WhatsApp Embedded Signup flow 
 
 ---
 
-## 👨 Built By
+## Built By
 **Raghav Sharma** — Backend Developer Intern, PearlThoughts  
 **Task Assigned By:** Tharun Kumar (Team Lead)  
 **Date:** 11th May 2026
 
 ---
 
-##  Live Demo
+## Live Demo
 Server runs locally on: `http://localhost:3000`
 
 ---
 
-##  Tech Stack
+## Tech Stack
 - NestJS + TypeScript
 - Node.js v24
 - dotenv / @nestjs/config
 
 ---
 
-##  Setup Instructions
+## Setup Instructions
 
 ### 1. Clone the repo
 ```bash
@@ -50,7 +50,7 @@ Server will start at `http://localhost:3000`
 
 ---
 
-##  Feature Toggle
+## Feature Toggle
 
 Control which WhatsApp provider is active by setting this in your `.env` file:
 
@@ -64,9 +64,9 @@ Restart the server after changing the value. No code changes needed.
 
 ---
 
-##  API Endpoints
+## API Endpoints
 
-###  Meta Embedded Signup Flow
+### Meta Embedded Signup Flow
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -76,7 +76,7 @@ Restart the server after changing the value. No code changes needed.
 | POST | `/meta/phone/register` | Register phone number for Cloud API |
 | POST | `/meta/webhook/subscribe` | Subscribe app to WABA webhooks |
 
-###  Webhook Endpoints
+### Webhook Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -84,24 +84,23 @@ Restart the server after changing the value. No code changes needed.
 | POST | `/webhook/meta` | Receive incoming webhook events |
 | POST | `/webhook/meta/simulate` | Simulate an incoming webhook event |
 
-###  MessageBird Flow
+### MessageBird Flow
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/messagebird/connect` | Connect MessageBird channel |
 | POST | `/messagebird/send-message` | Send WhatsApp message via MessageBird |
 
-###  Unified Endpoint
+### Unified Endpoint
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/whatsapp/provider` | Check which provider is currently active |
 | POST | `/whatsapp/send-appointment` | Send appointment message via active provider |
 
-
 ---
 
-##  Template Message API
+## Template Message API
 
 ### What are Template Messages?
 Template messages are pre-approved message formats used to send appointment notifications outside the 24-hour customer service window. Each template has dynamic placeholders that get replaced with real values at send time.
@@ -114,7 +113,7 @@ Template messages are pre-approved message formats used to send appointment noti
 | `appointment_reminder` | 24 hours before appointment |
 | `appointment_cancellation` | When appointment is cancelled |
 
-###  Template Endpoints
+### Template Endpoints
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -123,9 +122,9 @@ Template messages are pre-approved message formats used to send appointment noti
 | POST | `/template/appointment/reminder` | Send reminder template |
 | POST | `/template/appointment/cancellation` | Send cancellation template |
 | GET | `/template/status/:messageId` | Get delivery status |
-| POST | `/webhook/meta/template-status/:messageId` | Simulate delivery event |
+| POST | `/webhook/meta/template-status/:messageId` | Simulate delivery webhook event |
 
-###  Sample Request Bodies
+### Sample Request Bodies
 
 #### POST `/template/appointment/confirmation`
 ```json
@@ -154,6 +153,7 @@ Template messages are pre-approved message formats used to send appointment noti
     "hospital_name": "PearlThoughts Hospital"
   }
 }
+```
 
 #### GET `/template/status/:messageId`
 
@@ -161,43 +161,58 @@ GET /template/status/wamid.MOCK_VMUY1AWBF
 
 #### POST `/webhook/meta/template-status/:messageId`
 
-###  Template Status Lifecycle
+### Template Status Lifecycle
 
-SENT → DELIVERED → (READ)
+SENT → DELIVERED
 ↓
-FAILED → RETRY (max 3) → SENT or FALLBACK
+FAILED → RETRYING (up to 2 retries) → SENT
+↓ (if all 3 attempts fail)
+FALLBACK_SENT (via other provider)
 
-###  Retry + Fallback Behaviour
-- On failure: retries up to **3 times** automatically
-- After 3 retries: **falls back** to the other provider
-- Example: META_WHATSAPP fails → automatically switches to MESSAGE_BIRD
+> **Note:** `READ` status is not implemented in this mock. Status transitions are driven by webhook simulation only.
 
-###  Simulate Scenarios
+### Retry Behaviour
+- Each send attempt is tracked. The first attempt is attempt 1.
+- On failure, the service retries up to **2 more times** (3 total attempts).
+- Status is updated to `RETRYING` before each retry attempt.
+- If `simulate=retry` is used: attempts 1 and 2 fail, attempt 3 succeeds and status becomes `SENT`.
+- If `simulate=failure` is used: all 3 attempts fail and the fallback provider is triggered.
+
+### Fallback Behaviour
+- After all 3 attempts fail, the service switches to the other provider automatically.
+- Example: `META_WHATSAPP` fails → switches to `MESSAGE_BIRD`.
+- The **same `message_id` is reused** for the fallback attempt — no split records are created.
+- The existing status record is updated in place: `fallback_used: true`, `fallback_provider` is set, status becomes `FALLBACK_SENT`.
+
+### Simulate Scenarios
 
 | Scenario | How |
 |---|---|
 | Normal send | `POST /template/appointment/confirmation` |
-| Retry (fails 2x then succeeds) | Add `?simulate=retry` |
-| Full failure + fallback | Add `?simulate=failure` |
+| Retry (fails 2x then succeeds on attempt 3) | Add `?simulate=retry` |
+| Full failure + fallback to other provider | Add `?simulate=failure` |
 | Delivery webhook | `POST /webhook/meta/template-status/:id?status=delivered` |
 | Failed webhook | `POST /webhook/meta/template-status/:id?status=failed` |
 
+### Status Persistence
+Template message status records are persisted to `data/status-store.json` on every write. On server restart, all records are reloaded from this file automatically. This file is excluded from version control via `.gitignore`.
+
 ---
 
-##  Simulate Failure Scenarios
+## Simulate Failure Scenarios
 
 Add `?simulate=failure` to these endpoints to trigger error responses:
 
-POST /meta/signup/callback?simulate=failure     → user_cancelled
-POST /meta/token/exchange?simulate=failure      → invalid_code
-POST /meta/phone/register?simulate=failure      → phone_already_registered
-POST /messagebird/connect?simulate=failure      → invalid_access_key
-POST /messagebird/send-message?simulate=failure → invalid_access_key
+POST /meta/signup/callback?simulate=failure      → user_cancelled
+POST /meta/token/exchange?simulate=failure       → invalid_code
+POST /meta/phone/register?simulate=failure       → phone_already_registered
+POST /messagebird/connect?simulate=failure       → invalid_access_key
+POST /messagebird/send-message?simulate=failure  → invalid_access_key
 POST /whatsapp/send-appointment?simulate=failure → provider error
 
 ---
 
-##  Sample Postman Request Bodies
+## Sample Postman Request Bodies
 
 ### POST `/meta/token/exchange`
 ```json
@@ -237,36 +252,51 @@ POST /whatsapp/send-appointment?simulate=failure → provider error
   "patient_name": "Raghav Sharma",
   "doctor_name": "Mehta",
   "appointment_date": "12th May 2026",
-  "appointment_time": "10:30 AM"
+  "appointment_time": "10:30 AM",
+  "hospital_name": "PearlThoughts Hospital",
+  "appointment_type": "confirmation"
 }
 ```
 
-### GET `/webhook/meta` (Webhook Verification)
-http://localhost:3000/webhook/meta?hub.mode=subscribe&hub.verify_token=MOCK_VERIFY_TOKEN_xyz789&hub.challenge=CHALLENGE_ABC123
+> `appointment_type` accepts: `"confirmation"` (default), `"reminder"`, `"cancellation"`
 
-##  Project Structure
+### GET `/webhook/meta` (Webhook Verification)
+
+GET http://localhost:3000/webhook/meta?hub.mode=subscribe&hub.verify_token=MOCK_VERIFY_TOKEN_xyz789&hub.challenge=CHALLENGE_ABC123
+
+---
+
+## Project Structure
 src/
 ├── config/
-│   └── provider.config.ts       # Feature toggle logic
+│   └── provider.config.ts        # Feature toggle logic
 ├── common/
-│   └── mock-data.ts             # All mock responses
+│   └── mock-data.ts              # All mock responses
 ├── meta/
-│   ├── meta.service.ts          # Meta Embedded Signup logic
-│   └── meta.controller.ts       # Meta endpoints
+│   ├── meta.service.ts           # Meta Embedded Signup logic
+│   └── meta.controller.ts        # Meta endpoints
 ├── messagebird/
-│   ├── messagebird.service.ts   # MessageBird logic
+│   ├── messagebird.service.ts    # MessageBird logic
 │   └── messagebird.controller.ts
+├── template/
+│   ├── template.types.ts         # Enums, interfaces, types
+│   ├── template.service.ts       # Template send, retry, fallback, status
+│   ├── template.controller.ts    # Template endpoints
+│   └── template.service.spec.ts  # Unit tests
 ├── webhook/
-│   ├── webhook.service.ts       # Webhook verification + events
-│   └── webhook.controller.ts
+│   ├── webhook.service.ts        # Webhook verification + events
+│   ├── webhook.controller.ts
+│   └── webhook.service.spec.ts
 ├── whatsapp/
-│   ├── whatsapp.service.ts      # Provider router
-│   └── whatsapp.controller.ts
+│   ├── whatsapp.service.ts       # Provider router
+│   ├── whatsapp.controller.ts
+│   └── whatsapp.service.spec.ts
 ├── app.module.ts
 └── main.ts
+data/
+└── status-store.json             # Persisted status records (not committed)
 
-##  How Meta Embedded Signup Works (Real Flow)
-
+## How Meta Embedded Signup Works (Real Flow)
 User clicks "Login with Facebook" button
 ↓
 Facebook popup opens (JS SDK)
@@ -282,8 +312,9 @@ Server subscribes app to WABA webhooks
 ↓
 Business can now send/receive WhatsApp messages
 
+---
 
-##  Important Notes
+## Important Notes
 
 - This is a **mock/stub implementation** — no real Meta or MessageBird credentials are used
 - All tokens, IDs, and responses are simulated
@@ -292,7 +323,7 @@ Business can now send/receive WhatsApp messages
 
 ---
 
-##  References
+## References
 
 - [Meta Embedded Signup Documentation](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/overview/)
 - [Meta WhatsApp Business Platform](https://developers.facebook.com/documentation/business-messaging/whatsapp/overview/)

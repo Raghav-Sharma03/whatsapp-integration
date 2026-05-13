@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   AppointmentTemplateType,
   AppointmentTemplateParams,
@@ -12,15 +14,91 @@ import { MOCK_META, MOCK_MESSAGEBIRD } from '../common/mock-data';
 import { getProvider, WhatsAppProvider } from '../config/provider.config';
 
 @Injectable()
-export class TemplateService {
+export class TemplateService implements OnModuleInit {
   private readonly logger = new Logger(TemplateService.name);
 
   // ─────────────────────────────────────────────
   // In-memory status tracker
   // Stores message_id → TemplateStatusRecord
-  // In production this would be a database table
+  // Persisted to data/status-store.json on every write
+  // Loaded from file on service startup
   // ─────────────────────────────────────────────
   private statusStore = new Map<string, TemplateStatusRecord>();
+
+  private readonly STORE_FILE = path.join(
+    process.cwd(),
+    'data',
+    'status-store.json',
+  );
+
+  // ─────────────────────────────────────────────
+  // OnModuleInit: runs once when NestJS starts
+  // Loads persisted status records from JSON file
+  // into the in-memory Map
+  // ─────────────────────────────────────────────
+  onModuleInit() {
+    this.loadStoreFromFile();
+  }
+
+  private loadStoreFromFile(): void {
+    try {
+      // If the file doesn't exist yet (first boot), start empty — that's fine
+      if (!fs.existsSync(this.STORE_FILE)) {
+        this.logger.log(
+          '[StatusStore] No existing store file found — starting fresh',
+        );
+        return;
+      }
+
+      const raw = fs.readFileSync(this.STORE_FILE, 'utf-8');
+      const parsed = JSON.parse(raw) as Record<string, TemplateStatusRecord>;
+
+      // Rebuild Map from plain object
+      this.statusStore = new Map(Object.entries(parsed));
+
+      this.logger.log(
+        `[StatusStore] Loaded ${this.statusStore.size} record(s) from ${this.STORE_FILE}`,
+      );
+    } catch (err) {
+      // Corrupted file or parse error — log and start fresh rather than crashing
+      this.logger.error(
+        `[StatusStore] Failed to load store file — starting fresh. Error: ${(err as Error).message}`,
+      );
+      this.statusStore = new Map();
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // Flush in-memory Map to JSON file after every write
+  // Map → plain object → JSON string → file
+  // ─────────────────────────────────────────────
+  private persistStore(): void {
+    try {
+      // Ensure data/ directory exists (creates it if not present)
+      const dir = path.dirname(this.STORE_FILE);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+        this.logger.log(`[StatusStore] Created directory: ${dir}`);
+      }
+
+      // Convert Map → plain object for JSON serialization
+      const plainObject = Object.fromEntries(this.statusStore);
+      fs.writeFileSync(
+        this.STORE_FILE,
+        JSON.stringify(plainObject, null, 2),
+        'utf-8',
+      );
+
+      this.logger.log(
+        `[StatusStore] Persisted ${this.statusStore.size} record(s) to file`,
+      );
+    } catch (err) {
+      // Log the error but do NOT crash the app — sending still succeeded
+      this.logger.error(
+        `[StatusStore] Failed to persist store: ${(err as Error).message}`,
+      );
+    }
+  }
 
   // ─────────────────────────────────────────────
   // Build Meta Cloud API Template Payload
@@ -329,31 +407,42 @@ export class TemplateService {
       `[Template] Falling back from ${failedProvider} to ${fallbackProvider}`,
     );
 
-    const fallbackMessageId =
-      'wamid.MOCK_FALLBACK_' +
-      Math.random().toString(36).substr(2, 9).toUpperCase();
+    // Update existing record with fallback info
+    // Same message ID — no split records
+    const existing = this.statusStore.get(messageId);
+    if (existing) {
+      existing.fallback_used = true;
+      existing.fallback_provider =
+        fallbackProvider === WhatsAppProvider.META_WHATSAPP
+          ? TemplateProvider.META_WHATSAPP
+          : TemplateProvider.MESSAGE_BIRD;
+      existing.status = TemplateMessageStatus.FALLBACK_SENT;
+      existing.updated_at = new Date().toISOString();
+      this.statusStore.set(messageId, existing);
+      // ← Persist immediately after mutating the fallback record
+      this.persistStore();
+    }
+
+    const fallbackResult = this.executeSend(
+      to,
+      templateName,
+      params,
+      fallbackProvider,
+      messageId, // ← same original messageId
+      0,
+    );
 
     return {
-      success: true,
-      provider: fallbackProvider,
+      ...fallbackResult,
       fallback: true,
       original_provider: failedProvider,
       message: `Primary provider ${failedProvider} failed. Message sent via fallback provider ${fallbackProvider}`,
-      message_id: fallbackMessageId,
-      status: TemplateMessageStatus.SENT,
-      ...this.executeSend(
-        to,
-        templateName,
-        params,
-        fallbackProvider,
-        fallbackMessageId,
-        0,
-      ),
     };
   }
 
   // ─────────────────────────────────────────────
-  // Track and Update Status in Memory
+  // Track and Update Status
+  // Every write flushes to JSON file
   // ─────────────────────────────────────────────
   private trackStatus(
     messageId: string,
@@ -370,11 +459,14 @@ export class TemplateService {
       provider,
       status,
       retry_count: retryCount,
+      fallback_used: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
     this.statusStore.set(messageId, record);
     this.logger.log(`[Template] Status tracked: ${messageId} → ${status}`);
+    // ← Persist every new record to file immediately
+    this.persistStore();
   }
 
   private updateStatus(messageId: string, status: TemplateMessageStatus) {
@@ -384,6 +476,8 @@ export class TemplateService {
       existing.updated_at = new Date().toISOString();
       this.statusStore.set(messageId, existing);
       this.logger.log(`[Template] Status updated: ${messageId} → ${status}`);
+      // ← Persist every status update to file immediately
+      this.persistStore();
     }
   }
 
