@@ -1,77 +1,74 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MetaService } from '../meta/meta.service';
 import { MessageBirdService } from '../messagebird/messagebird.service';
-import { getProvider, WhatsAppProvider } from '../config/provider.config';
+import { getProvider } from '../config/provider.config';
+import { TemplateService } from '../template/template.service';
+import {
+  AppointmentTemplateType,
+  AppointmentType,
+} from '../template/template.types';
 
 @Injectable()
 export class WhatsAppService {
   private readonly logger = new Logger(WhatsAppService.name);
 
   constructor(
-    private readonly metaService: MetaService,
     private readonly messageBirdService: MessageBirdService,
+    private readonly templateService: TemplateService,
   ) {}
 
   // ─────────────────────────────────────────────
   // Send Appointment Message
-  // This is the MESSAGING flow — completely
-  // separate from the ONBOARDING flow.
-  //
-  // Onboarding = registering your business ONCE
-  // Messaging  = sending a message EVERY TIME
+  // Accepts appointment_type to determine which
+  // template to send:
+  // confirmation → appointment_confirmation
+  // reminder     → appointment_reminder
+  // cancellation → appointment_cancellation
   // ─────────────────────────────────────────────
-  sendAppointmentMessage(
+  async sendAppointmentMessage(
     to: string,
     patientName: string,
     doctorName: string,
     appointmentDate: string,
     appointmentTime: string,
     hospitalName: string,
+    appointmentType: AppointmentType = AppointmentType.CONFIRMATION,
     simulate?: string,
   ) {
     const provider = getProvider();
 
-    const messageBody =
-      `Hello ${patientName}! Your appointment with Dr. ${doctorName} ` +
-      `at ${hospitalName} is confirmed for ${appointmentDate} at ${appointmentTime}. ` +
-      `Please reply CONFIRM to confirm or CANCEL to cancel.`;
+    const templateParams = {
+      patient_name: patientName,
+      doctor_name: doctorName,
+      appointment_date: appointmentDate,
+      appointment_time: appointmentTime,
+      hospital_name: hospitalName,
+    };
+
+    // Map appointment type to template name
+    const templateMap: Record<AppointmentType, AppointmentTemplateType> = {
+      [AppointmentType.CONFIRMATION]:
+        AppointmentTemplateType.CONFIRMATION,
+      [AppointmentType.REMINDER]:
+        AppointmentTemplateType.REMINDER,
+      [AppointmentType.CANCELLATION]:
+        AppointmentTemplateType.CANCELLATION,
+    };
+
+    const templateName = templateMap[appointmentType];
 
     this.logger.log(`[WhatsApp Router] Active provider: ${provider}`);
-    this.logger.log(`[WhatsApp Router] Sending appointment message to: ${to}`);
-    this.logger.log(`[WhatsApp Router] Message: ${messageBody}`);
+    this.logger.log(`[WhatsApp Router] Appointment type: ${appointmentType}`);
+    this.logger.log(`[WhatsApp Router] Template: ${templateName}`);
+    this.logger.log(`[WhatsApp Router] Sending to: ${to}`);
 
-    // ─────────────────────────────────────────
-    // META WHATSAPP — uses Cloud API sendMessage
-    // NOT onboarding/registration logic
-    // ─────────────────────────────────────────
-    if (provider === WhatsAppProvider.META_WHATSAPP) {
-      this.logger.log('[WhatsApp Router] Routing to → Meta Cloud API sendMessage');
-      const result = this.metaService.sendMessage(to, messageBody, simulate);
-      return {
-        provider: 'META_WHATSAPP',
-        ...result,
-      };
-    }
+    const result = await this.templateService.sendTemplate(
+      to,
+      templateName,
+      templateParams,
+      simulate,
+    );
 
-    // ─────────────────────────────────────────
-    // MESSAGE BIRD — uses Bird API sendMessage
-    // ─────────────────────────────────────────
-    if (provider === WhatsAppProvider.MESSAGE_BIRD) {
-      this.logger.log('[WhatsApp Router] Routing to → MessageBird sendMessage');
-      const result = this.messageBirdService.sendMessage(to, messageBody, simulate);
-      return {
-        provider: 'MESSAGE_BIRD',
-        ...result,
-      };
-    }
-
-    // Fallback — should never reach here
-    this.logger.error('[WhatsApp Router] Unknown provider — cannot send message');
-    return {
-      success: false,
-      error: 'unknown_provider',
-      error_description: 'No valid WhatsApp provider configured',
-    };
+    return result;
   }
 
   // ─────────────────────────────────────────────
@@ -84,7 +81,7 @@ export class WhatsAppService {
       active_provider: provider,
       message: `All WhatsApp messages are currently being sent via ${provider}`,
       switch_instructions:
-        'To switch providers, change WHATSAPP_PROVIDER in your .env file to either MESSAGE_BIRD or META_WHATSAPP and restart the server.',
+        'To switch providers, change WHATSAPP_PROVIDER in your .env to either MESSAGE_BIRD or META_WHATSAPP and restart the server.',
     };
   }
 }

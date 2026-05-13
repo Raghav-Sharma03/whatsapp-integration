@@ -4,6 +4,7 @@ import {
   Post,
   Query,
   Body,
+  Param,
   Res,
   Logger,
 } from '@nestjs/common';
@@ -18,8 +19,7 @@ export class WebhookController {
 
   // ─────────────────────────────────────────────
   // GET /webhook/meta
-  // Meta calls this to verify your webhook URL
-  // Query params: hub.mode, hub.verify_token, hub.challenge
+  // Meta webhook verification
   // ─────────────────────────────────────────────
   @Get('meta')
   verifyWebhook(
@@ -29,41 +29,59 @@ export class WebhookController {
     @Res() res: Response,
   ) {
     this.logger.log('[Webhook Controller] GET /webhook/meta called');
-
     const result = this.webhookService.verifyMetaWebhook(
       mode,
       verifyToken,
       challenge,
     );
-
     return res.status(result.statusCode).send(result.response);
   }
 
   // ─────────────────────────────────────────────
   // POST /webhook/meta
-  // Meta sends incoming events to this endpoint
-  // (messages, delivery receipts, status updates)
+  // Receive incoming webhook events
   // ─────────────────────────────────────────────
   @Post('meta')
   handleWebhookEvent(@Body() payload: any, @Res() res: Response) {
     this.logger.log('[Webhook Controller] POST /webhook/meta called');
-
     const result = this.webhookService.handleMetaWebhookEvent(payload);
     return res.status(result.statusCode).send(result.response);
   }
 
   // ─────────────────────────────────────────────
   // POST /webhook/meta/simulate
-  // Triggers a fake incoming webhook event
-  // so you can test without real Meta credentials
+  // Simulate incoming message event
   // ─────────────────────────────────────────────
   @Post('meta/simulate')
   simulateEvent(@Res() res: Response) {
     this.logger.log('[Webhook Controller] POST /webhook/meta/simulate called');
-
     const result = this.webhookService.simulateIncomingEvent();
     return res.status(result.statusCode).json({
       message: 'Simulated webhook event processed',
+      result: result.response,
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  // POST /webhook/meta/template-status/:messageId
+  // Simulate template delivery status event
+  // e.g. ?status=delivered or ?status=failed
+  // ─────────────────────────────────────────────
+  @Post('meta/template-status/:messageId')
+  simulateTemplateDelivery(
+    @Param('messageId') messageId: string,
+    @Query('status') status: string = 'delivered',
+    @Res() res: Response,
+  ) {
+    this.logger.log(
+      `[Webhook Controller] POST /webhook/meta/template-status/${messageId} called`,
+    );
+    const result = this.webhookService.simulateTemplateDelivery(
+      messageId,
+      status,
+    );
+    return res.status(result.statusCode).json({
+      message: `Template delivery status "${status}" simulated for message ${messageId}`,
       result: result.response,
     });
   }
