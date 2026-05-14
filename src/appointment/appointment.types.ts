@@ -76,6 +76,7 @@ export interface SessionContext {
   time?: string;        // "09:00"
   booking_id?: string;
   suggested_slot?: { date: string; time: string }; // ← ADD THIS
+  flow_intent?: string;
 }
 
 export interface Session {

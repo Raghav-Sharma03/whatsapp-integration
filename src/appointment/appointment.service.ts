@@ -22,9 +22,6 @@ export class AppointmentService implements OnModuleInit {
 
   constructor(private readonly doctorService: DoctorService) {}
 
-  // ─────────────────────────────────────────────
-  // OnModuleInit: load appointments from file
-  // ─────────────────────────────────────────────
   onModuleInit() {
     this.loadFromFile();
   }
@@ -72,16 +69,34 @@ export class AppointmentService implements OnModuleInit {
   }
 
   // ─────────────────────────────────────────────
-  // Generate unique booking ID
+  // Timezone-safe date parser
+  // new Date('2026-05-18') parses as UTC → wrong day in IST
+  // new Date(2026, 4, 18) uses LOCAL time → always correct
   // ─────────────────────────────────────────────
-  private generateBookingId(): string {
-    return 'APT_' + Math.random().toString(36).substr(2, 6).toUpperCase();
+  private parseLocalDate(dateStr: string): Date {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
   }
 
   // ─────────────────────────────────────────────
-  // Get booked times for a doctor on a date
-  // Returns array of "HH:MM" strings
+  // Timezone-safe today (midnight local)
   // ─────────────────────────────────────────────
+  private getLocalToday(): Date {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  }
+
+  // ─────────────────────────────────────────────
+  // Generate unique booking ID
+  // Uses timestamp + random to minimise collision risk
+  // ─────────────────────────────────────────────
+  private generateBookingId(): string {
+    const ts = Date.now().toString(36).toUpperCase();
+    const rand = Math.random().toString(36).substr(2, 4).toUpperCase();
+    return `APT_${ts}${rand}`;
+  }
+
   getBookedTimes(doctorId: string, date: string): string[] {
     const booked: string[] = [];
     for (const apt of this.appointments.values()) {
@@ -96,10 +111,6 @@ export class AppointmentService implements OnModuleInit {
     return booked;
   }
 
-  // ─────────────────────────────────────────────
-  // Get all booked times map for a doctor
-  // Returns Map<date, string[]> for slot searching
-  // ─────────────────────────────────────────────
   private getBookedTimesMap(doctorId: string): Map<string, string[]> {
     const map = new Map<string, string[]>();
     for (const apt of this.appointments.values()) {
@@ -117,7 +128,6 @@ export class AppointmentService implements OnModuleInit {
 
   // ─────────────────────────────────────────────
   // Book an appointment
-  // Full validation: past date, duplicate, slot available
   // ─────────────────────────────────────────────
   book(
     userPhone: string,
@@ -134,17 +144,21 @@ export class AppointmentService implements OnModuleInit {
       `[Appointment] Booking: user=${userPhone}, doctor=${doctorId}, date=${date}, time=${time}`,
     );
 
+    // ── Input sanity ──
+    if (!userPhone?.trim() || !doctorId?.trim() || !date?.trim() || !time?.trim()) {
+      this.logger.warn('[Appointment] Missing required booking fields');
+      return { success: false, message: 'Missing required booking information.' };
+    }
+
     const doctor = this.doctorService.getDoctorById(doctorId);
     if (!doctor) {
       this.logger.warn(`[Appointment] Doctor not found: ${doctorId}`);
       return { success: false, message: 'Doctor not found.' };
     }
 
-    // Check past date
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const appointmentDate = new Date(date);
-    appointmentDate.setHours(0, 0, 0, 0);
+    // ── Past date check (timezone-safe) ──
+    const today = this.getLocalToday();
+    const appointmentDate = this.parseLocalDate(date);
 
     if (appointmentDate < today) {
       this.logger.warn(`[Appointment] Past date booking attempt: ${date}`);
@@ -154,16 +168,14 @@ export class AppointmentService implements OnModuleInit {
       };
     }
 
-    // Check doctor available on that day
+    // ── Doctor available on that day ──
     if (!this.doctorService.isDoctorAvailableOnDate(doctor, date)) {
       const next = this.doctorService.findNextAvailableSlot(
         doctor,
         date,
         this.getBookedTimesMap(doctorId),
       );
-      this.logger.warn(
-        `[Appointment] Doctor not available on ${date}`,
-      );
+      this.logger.warn(`[Appointment] Doctor not available on ${date}`);
       return {
         success: false,
         message: `${doctor.name} is not available on ${this.formatDate(date)}. ${next ? `Next available: ${this.formatDate(next.date)} at ${this.formatTime(next.time)}.` : 'No slots available in the next 7 days.'}`,
@@ -173,7 +185,7 @@ export class AppointmentService implements OnModuleInit {
 
     const bookedTimes = this.getBookedTimes(doctorId, date);
 
-    // Check daily limit
+    // ── Daily limit ──
     if (bookedTimes.length >= doctor.schedule.daily_limit) {
       const next = this.doctorService.findNextAvailableSlot(
         doctor,
@@ -187,6 +199,8 @@ export class AppointmentService implements OnModuleInit {
         suggestion: next || undefined,
       };
     }
+
+    // ── Duplicate check (before slot check) ──
     const duplicate = Array.from(this.appointments.values()).find(
       (apt) =>
         apt.user_phone === userPhone &&
@@ -203,16 +217,9 @@ export class AppointmentService implements OnModuleInit {
       };
     }
 
-    // Check slot available
-    if (
-      !this.doctorService.isSlotAvailable(doctor, date, time, bookedTimes)
-    ) {
-      // Find next available slot
-      const slots = this.doctorService.getAvailableSlots(
-        doctor,
-        date,
-        bookedTimes,
-      );
+    // ── Slot available ──
+    if (!this.doctorService.isSlotAvailable(doctor, date, time, bookedTimes)) {
+      const slots = this.doctorService.getAvailableSlots(doctor, date, bookedTimes);
       const nextSlot = slots.find((s) => s.available);
       this.logger.warn(`[Appointment] Slot ${time} not available`);
       return {
@@ -222,9 +229,7 @@ export class AppointmentService implements OnModuleInit {
       };
     }
 
-    
-
-    // All checks passed — create appointment
+    // ── All checks passed — create appointment ──
     const bookingId = this.generateBookingId();
     const appointment: Appointment = {
       booking_id: bookingId,
@@ -242,9 +247,7 @@ export class AppointmentService implements OnModuleInit {
     this.appointments.set(bookingId, appointment);
     this.persistToFile();
 
-    this.logger.log(
-      `[Appointment] Booked successfully: ${bookingId}`,
-    );
+    this.logger.log(`[Appointment] Booked successfully: ${bookingId}`);
 
     return {
       success: true,
@@ -255,7 +258,6 @@ export class AppointmentService implements OnModuleInit {
 
   // ─────────────────────────────────────────────
   // Cancel an appointment
-  // Validates: exists, belongs to user, not already cancelled, not past
   // ─────────────────────────────────────────────
   cancel(
     userPhone: string,
@@ -265,7 +267,11 @@ export class AppointmentService implements OnModuleInit {
       `[Appointment] Cancel request: user=${userPhone}, bookingId=${bookingId}`,
     );
 
-    const appointment = this.appointments.get(bookingId);
+    if (!bookingId?.trim()) {
+      return { success: false, message: 'Booking ID is required.' };
+    }
+
+    const appointment = this.appointments.get(bookingId.toUpperCase());
 
     if (!appointment) {
       this.logger.warn(`[Appointment] Booking not found: ${bookingId}`);
@@ -291,11 +297,9 @@ export class AppointmentService implements OnModuleInit {
       };
     }
 
-    // Check if appointment is in the past
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const appointmentDate = new Date(appointment.date);
-    appointmentDate.setHours(0, 0, 0, 0);
+    // ── Past date check (timezone-safe) ──
+    const today = this.getLocalToday();
+    const appointmentDate = this.parseLocalDate(appointment.date);
 
     if (appointmentDate < today) {
       this.logger.warn(`[Appointment] Cannot cancel past appointment`);
@@ -319,8 +323,7 @@ export class AppointmentService implements OnModuleInit {
   }
 
   // ─────────────────────────────────────────────
-  // Cancel by time — finds appointment by user + time
-  // Used when user says "cancel my 5 PM appointment"
+  // Cancel by time
   // ─────────────────────────────────────────────
   cancelByTime(
     userPhone: string,
@@ -330,15 +333,14 @@ export class AppointmentService implements OnModuleInit {
       `[Appointment] Cancel by time: user=${userPhone}, time=${time}`,
     );
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = this.getLocalToday();
 
     const matches = Array.from(this.appointments.values()).filter(
       (apt) =>
         apt.user_phone === userPhone &&
         apt.time === time &&
         apt.status === AppointmentStatus.CONFIRMED &&
-        new Date(apt.date) >= today,
+        this.parseLocalDate(apt.date) >= today,   // ← timezone-safe
     );
 
     if (matches.length === 0) {
@@ -349,7 +351,6 @@ export class AppointmentService implements OnModuleInit {
     }
 
     if (matches.length > 1) {
-      // Ambiguous — return matches for user to choose
       return {
         success: false,
         message: `You have multiple appointments at ${this.formatTime(time)}. Please provide the booking ID to cancel. Your bookings: ${matches.map((m) => `${m.booking_id} with ${m.doctor_name} on ${this.formatDate(m.date)}`).join(', ')}.`,
@@ -362,19 +363,17 @@ export class AppointmentService implements OnModuleInit {
 
   // ─────────────────────────────────────────────
   // Get appointments for a user
-  // Returns only CONFIRMED upcoming appointments by default
   // ─────────────────────────────────────────────
   getByUser(
     userPhone: string,
     includeAll: boolean = false,
   ): Appointment[] {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = this.getLocalToday();
 
     const results = Array.from(this.appointments.values()).filter((apt) => {
       if (apt.user_phone !== userPhone) return false;
       if (!includeAll && apt.status !== AppointmentStatus.CONFIRMED) return false;
-      if (!includeAll && new Date(apt.date) < today) return false;
+      if (!includeAll && this.parseLocalDate(apt.date) < today) return false;  // ← timezone-safe
       return true;
     });
 
@@ -383,14 +382,12 @@ export class AppointmentService implements OnModuleInit {
     );
 
     return results.sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+      (a, b) =>
+        this.parseLocalDate(a.date).getTime() -
+        this.parseLocalDate(b.date).getTime(),   // ← timezone-safe sort
     );
   }
 
-  // ─────────────────────────────────────────────
-  // Get available slots for a doctor on a date
-  // Wrapper used by BotService
-  // ─────────────────────────────────────────────
   getAvailableSlots(doctorId: string, date: string) {
     const doctor = this.doctorService.getDoctorById(doctorId);
     if (!doctor) return [];
@@ -399,10 +396,11 @@ export class AppointmentService implements OnModuleInit {
   }
 
   // ─────────────────────────────────────────────
-  // Format helpers for user-friendly messages
+  // Format helpers — timezone-safe
   // ─────────────────────────────────────────────
   formatDate(date: string): string {
-    return new Date(date).toLocaleDateString('en-IN', {
+    const [year, month, day] = date.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString('en-IN', {
       weekday: 'long',
       day: 'numeric',
       month: 'long',
@@ -417,9 +415,6 @@ export class AppointmentService implements OnModuleInit {
     return `${hour}:${m.toString().padStart(2, '0')} ${period}`;
   }
 
-  // ─────────────────────────────────────────────
-  // Clear all appointments (for testing only)
-  // ─────────────────────────────────────────────
   clearAll(): void {
     this.appointments.clear();
     this.persistToFile();

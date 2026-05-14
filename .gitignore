@@ -57,3 +57,5 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Runtime status store — persisted locally, not committed
 data/status-store.json
+data/appointments.json
+data/sessions.json

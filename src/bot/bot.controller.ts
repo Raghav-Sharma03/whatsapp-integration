@@ -1,10 +1,14 @@
-import { Controller, Post, Body, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Logger,
+  UsePipes,
+  ValidationPipe,
+  BadRequestException,
+} from '@nestjs/common';
 import { BotService } from './bot.service';
-
-export class SendMessageDto {
-  user_phone: string;
-  message: string;
-}
+import { SendMessageDto } from './dto/send-message.dto';
 
 @Controller('bot')
 export class BotController {
@@ -15,23 +19,34 @@ export class BotController {
   // ─────────────────────────────────────────────
   // POST /bot/message
   // Single entry point for all WhatsApp bot messages
-  // Simulates incoming WhatsApp message from user
+  // Validates: user_phone (digits only, 7-15 chars)
+  //            message (non-empty, max 500 chars)
   // ─────────────────────────────────────────────
   @Post('message')
+  @UsePipes(
+    new ValidationPipe({
+      whitelist: true,          // strip unknown fields
+      forbidNonWhitelisted: true, // reject requests with extra fields
+      transform: true,          // auto-transform + run @Transform decorators
+      exceptionFactory: (errors) => {
+        const messages = errors.map(
+          (e) => Object.values(e.constraints || {}).join(', '),
+        );
+        return new BadRequestException({
+          success: false,
+          error: 'Validation failed',
+          details: messages,
+        });
+      },
+    }),
+  )
   async handleMessage(@Body() body: SendMessageDto) {
     this.logger.log(
-      `[BotController] Incoming message from ${body.user_phone}: "${body.message}"`,
+      `[BotController] Incoming: phone=${body.user_phone}, message="${body.message}"`,
     );
 
-    if (!body.user_phone || !body.message) {
-      return {
-        success: false,
-        error: 'user_phone and message are required',
-      };
-    }
-
     const response = await this.botService.handleMessage(
-      body.user_phone,
+      body.user_phone.trim(),
       body.message,
     );
 

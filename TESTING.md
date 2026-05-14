@@ -1,8 +1,8 @@
 # WhatsApp Doctor Appointment Bot — Testing Documentation
 
-**Project:** NestJS WhatsApp Bot Backend  
-**Intern:** Raghav Sharma @ PearlThoughts  
-**Date:** May 2026  
+**Project:** NestJS WhatsApp Bot Backend
+**Intern:** Raghav Sharma @ PearlThoughts
+**Date:** May 2026
 **API Base URL:** `http://localhost:3000`
 
 ---
@@ -28,9 +28,9 @@
 
 | File | Suite | Tests | Status |
 |------|-------|-------|--------|
-| `intent/intent.service.spec.ts` | IntentService | 15 |  All passing |
-| `slot/slot.service.spec.ts` | SlotService | varies |  All passing |
-| `bot/bot.service.spec.ts` | BotService | 113 total |  All passing |
+| `intent/intent.service.spec.ts` | IntentService | 15 | ✅ All passing |
+| `slot/slot.service.spec.ts` | SlotService | varies | ✅ All passing |
+| `bot/bot.service.spec.ts` | BotService | 113 total | ✅ All passing |
 
 ### BotService Test Groups
 

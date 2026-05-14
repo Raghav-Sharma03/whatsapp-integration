@@ -319,7 +319,10 @@ private detectIntent(normalised: string): IntentType {
   // ─────────────────────────────────────────────
 
   private toDateString(date: Date): string {
-    return date.toISOString().split('T')[0];
+    const y = date.getFullYear();
+    const m = (date.getMonth() + 1).toString().padStart(2, '0');
+    const d = date.getDate().toString().padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
 
   private getNextWeekday(dayName: string): Date {

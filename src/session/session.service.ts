@@ -3,6 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Session, IntentType, SessionContext } from '../appointment/appointment.types';
 
+// Session context expires after 30 minutes of inactivity
+const SESSION_TTL_MS = 30 * 60 * 1000;
+
 @Injectable()
 export class SessionService implements OnModuleInit {
   private readonly logger = new Logger(SessionService.name);
@@ -15,9 +18,6 @@ export class SessionService implements OnModuleInit {
     'sessions.json',
   );
 
-  // ─────────────────────────────────────────────
-  // OnModuleInit: load sessions from file on startup
-  // ─────────────────────────────────────────────
   onModuleInit() {
     this.loadFromFile();
   }
@@ -65,12 +65,42 @@ export class SessionService implements OnModuleInit {
   }
 
   // ─────────────────────────────────────────────
-  // Get session for a user — creates one if not exists
+  // Check if session context has expired (30 min TTL)
+  // Only the CONTEXT expires — the session record itself
+  // is kept so we don't lose user_phone tracking
+  // ─────────────────────────────────────────────
+  private isContextExpired(session: Session): boolean {
+    if (!session.updated_at) return false;
+    const lastActive = new Date(session.updated_at).getTime();
+    const now = Date.now();
+    return now - lastActive > SESSION_TTL_MS;
+  }
+
+  // ─────────────────────────────────────────────
+  // Get session — creates if not exists
+  // Auto-clears context if expired
   // ─────────────────────────────────────────────
   getSession(userPhone: string): Session {
     const existing = this.sessions.get(userPhone);
+
     if (existing) {
-      this.logger.log(`[Session] Found existing session for ${userPhone}`);
+      // Auto-expire stale context
+      if (this.isContextExpired(existing)) {
+        this.logger.log(
+          `[Session] Context expired for ${userPhone} — clearing stale context`,
+        );
+        const refreshed: Session = {
+          ...existing,
+          last_intent: IntentType.UNKNOWN,
+          context: {},
+          updated_at: new Date().toISOString(),
+        };
+        this.sessions.set(userPhone, refreshed);
+        this.persistToFile();
+        return refreshed;
+      }
+
+      this.logger.log(`[Session] Found active session for ${userPhone}`);
       return existing;
     }
 
@@ -118,7 +148,7 @@ export class SessionService implements OnModuleInit {
     this.persistToFile();
 
     this.logger.log(
-      `[Session] Updated session for ${userPhone} — intent: ${intent}`,
+      `[Session] Updated for ${userPhone} — intent: ${intent}`,
     );
     this.logger.log(
       `[Session] Context: ${JSON.stringify(mergedContext)}`,
@@ -128,7 +158,7 @@ export class SessionService implements OnModuleInit {
   }
 
   // ─────────────────────────────────────────────
-  // Clear context when user changes topic
+  // Clear context when user changes topic or completes booking
   // Keeps user_phone and last_intent, wipes context
   // ─────────────────────────────────────────────
   clearContext(userPhone: string): void {

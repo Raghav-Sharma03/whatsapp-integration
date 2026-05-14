@@ -24,7 +24,7 @@ export class BotService {
   // ─────────────────────────────────────────────
   // Main entry point
   // ─────────────────────────────────────────────
-  async handleMessage(
+   async handleMessage(
     userPhone: string,
     message: string,
   ): Promise<BotResponse> {
@@ -60,8 +60,16 @@ export class BotService {
 
     if (entities.specialization) newContext.specialization = entities.specialization;
     if (entities.date) newContext.date = entities.date;
-    if (entities.time) newContext.time = entities.time;
+    if (entities.time) {
+      newContext.time = entities.time;
+      newContext.suggested_slot = undefined; // clear suggestion if user gives explicit time
+    }
     if (entities.booking_id) newContext.booking_id = entities.booking_id;
+
+    // Track the original flow intent so carry-forward works across UNKNOWN turns
+    if (intent !== IntentType.UNKNOWN) {
+      newContext.flow_intent = intent;
+    }
 
     // Capture last_intent BEFORE updateSession overwrites it
     const previousIntent = session.last_intent;
@@ -69,16 +77,34 @@ export class BotService {
     const updatedSession = this.sessionService.updateSession(userPhone, intent, newContext);
     const context = updatedSession.context;
 
-    // If message is UNKNOWN but user is continuing a CHECK_SLOTS flow with a date,
-    // carry the intent forward (e.g. second message is just "monday")
-    const effectiveIntent =
-      intent === IntentType.UNKNOWN &&
-      previousIntent === IntentType.CHECK_SLOTS &&
-      context.doctor_id &&
-      context.date
-        ? IntentType.CHECK_SLOTS
-        : intent;
+    const effectiveIntent = (() => {
+      if (intent !== IntentType.UNKNOWN) return intent;
 
+      const flowIntent = context.flow_intent as IntentType | undefined;
+
+      // Continue BOOK flow: doctor + date + time → attempt booking
+      if (
+        flowIntent === IntentType.BOOK_APPOINTMENT &&
+        context.doctor_id &&
+        context.date &&
+        context.time
+      ) return IntentType.BOOK_APPOINTMENT;
+
+      // Continue BOOK flow: doctor + date → ask for time
+      if (
+        flowIntent === IntentType.BOOK_APPOINTMENT &&
+        context.doctor_id &&
+        context.date
+      ) return IntentType.BOOK_APPOINTMENT;
+
+      // Continue CHECK_SLOTS flow
+      if (
+        flowIntent === IntentType.CHECK_SLOTS &&
+        context.doctor_id
+      ) return IntentType.CHECK_SLOTS;
+
+      return intent;
+    })();
 
     // Route to handler
     switch (effectiveIntent) {
@@ -332,16 +358,17 @@ if (context.suggested_slot && context.doctor_id) {
   ): BotResponse {
     this.logger.log(`[Bot] CANCEL intent — context: ${JSON.stringify(context)}`);
 
-    if (context.booking_id) {
-      const result = this.appointmentService.cancel(userPhone, context.booking_id);
-      if (result.success) this.sessionService.clearContext(userPhone);
-      return this.buildResponse(
-        result.success ? `✅ ${result.message}` : `❌ ${result.message}`,
-        IntentType.CANCEL_APPOINTMENT,
-        entities,
-        context,
-      );
-    }
+  if (context.booking_id) {
+    const result = this.appointmentService.cancel(userPhone, context.booking_id);
+  // Clear context regardless — success or fail, don't keep stale booking_id
+    this.sessionService.clearContext(userPhone);
+    return this.buildResponse(
+      result.success ? `✅ ${result.message}` : `❌ ${result.message}`,
+      IntentType.CANCEL_APPOINTMENT,
+      entities,
+      context,
+    );
+  }
 
     if (context.time) {
       const result = this.appointmentService.cancelByTime(userPhone, context.time);
