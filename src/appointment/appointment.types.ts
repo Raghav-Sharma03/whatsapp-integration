@@ -78,6 +78,15 @@ export interface SessionContext {
   suggested_slot?: { date: string; time: string }; // ← ADD THIS
   flow_intent?: string;
 }
+// Public-facing session context — excludes internal fields like flow_intent
+export interface PublicSessionContext {
+  doctor_id?: string;
+  specialization?: string;
+  date?: string;
+  time?: string;
+  booking_id?: string;
+  suggested_slot?: { date: string; time: string };
+}
 
 export interface Session {
   user_phone: string;
@@ -111,7 +120,7 @@ export interface BotResponse {
   reply: string;
   intent: IntentType;
   entities: ExtractedEntities;
-  session_context: SessionContext;
+  session_context: PublicSessionContext;
   data?: any;
 }
 

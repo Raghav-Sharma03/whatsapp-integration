@@ -116,7 +116,8 @@ private detectIntent(normalised: string): IntentType {
       /\b(fix|make|set\s*up|arrange)\s*(a\s*)?(slot|appointment|visit|consultation)\b/,
       /\b(get|give)\s*me\s*(a\s*)?(slot|appointment|visit|booking)\b/,
       /\bcan\s*i\s*(get|have|book|see)\s*(a\s*)?(doctor|appointment|slot|visit)\b/,
-      /\bi\s*(have|got|feel|am\s*having)\s*(a\s*)?(fever|pain|problem|issue|ache|symptoms?)\b/,
+      /\bi\s*(have|got|feel|am\s*having)\s*(a\s*)?(fever|pain|problem|issue|ache|symptoms?|acne|rash|cough|cold|headache|injury|infection|swelling)\b/,
+      /\bi\s*(am\s*)?(having|getting|suffering\s*from|facing|experiencing)\b/,
       /\b(dizzy|dizziness|hurting|hurts|aching|aches|sick|ill|unwell)\b/,
       /\b(doctor|dr\.?)\b/,
     ];
