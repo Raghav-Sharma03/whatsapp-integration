@@ -323,18 +323,20 @@ if (context.suggested_slot && context.doctor_id) {
       );
     }
 
-    // ── Booking failed — smart fallback ──
-    this.logger.warn(`[Bot] Booking failed: ${result.message}`);
+    // Strip inline suggestion from service message to avoid duplication
+    // AppointmentService appends "Next available: ..." but we show it via 💡 line
+    const cleanMessage = result.message
+      .replace(/\s*Next available:[^]*$/i, '')
+      .replace(/\s*No slots available[^]*$/i, '')
+      .replace(/\s*No more slots[^]*$/i, '')
+      .trim();
+    let failReply = `❌ ${cleanMessage}`;
 
-    let failReply = `❌ ${result.message}`;
-
-    // Suggest alternative doctor if slot/day unavailable
-      if (result.suggestion) {
-  // Store suggestion in session so "yes" can auto-confirm it
-        this.sessionService.updateSession(userPhone, IntentType.BOOK_APPOINTMENT, {
-          suggested_slot: result.suggestion,
+    if (result.suggestion) {
+      this.sessionService.updateSession(userPhone, IntentType.BOOK_APPOINTMENT, {
+        suggested_slot: result.suggestion,
       });
-        failReply += `\n\n💡 Next available: ${this.appointmentService.formatDate(result.suggestion.date)} at ${this.appointmentService.formatTime(result.suggestion.time)}. Reply "yes" to confirm.`;
+      failReply += `\n\n💡 Next available: ${this.appointmentService.formatDate(result.suggestion.date)} at ${this.appointmentService.formatTime(result.suggestion.time)}. Reply "yes" to confirm.`;
     }
 
     const altDoctor = this.doctorService.findAlternativeDoctor(
@@ -535,6 +537,8 @@ if (context.suggested_slot && context.doctor_id) {
     context: SessionContext,
     data?: any,
   ): BotResponse {
-    return { reply, intent, entities, session_context: context, data };
+    // Strip internal fields before returning to API consumer
+    const { flow_intent, ...publicContext } = context;
+    return { reply, intent, entities, session_context: publicContext, data };
   }
 }
